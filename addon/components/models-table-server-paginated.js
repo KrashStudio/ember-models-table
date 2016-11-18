@@ -1,3 +1,7 @@
+// Works by passing modelName & store
+
+
+
 import Ember from 'ember';
 import ModelsTable from './models-table';
 import layout from '../templates/components/models-table';
@@ -16,6 +20,8 @@ export default ModelsTable.extend({
    * @name isLoading
    */
   isLoading: false,
+  didInitLoad: false,
+
 
   /**
    * The property on meta to load the pages count from.
@@ -78,7 +84,8 @@ export default ModelsTable.extend({
   arrangedContentLength: computed('filteredContent.meta', function () {
     var itemsCountProperty = get(this, 'metaItemsCountProperty');
     var meta = get(this, 'filteredContent.meta');
-    return get(meta, itemsCountProperty) || 0;
+
+    return meta ? (get(meta, itemsCountProperty) || 0) : 0;
   }),
 
   /**
@@ -91,7 +98,8 @@ export default ModelsTable.extend({
   pagesCount: computed('filteredContent.meta', function () {
     var pagesCountProperty = get(this, 'metaPagesCountProperty');
     var meta = get(this, 'filteredContent.meta');
-    return get(meta, pagesCountProperty) || 1;
+
+    return meta ? (get(meta, pagesCountProperty) || 1) : 1;
   }),
 
   /**
@@ -121,24 +129,21 @@ export default ModelsTable.extend({
    * It takes the store, modelName and query from the passed in data-object and adds page, sorting & filtering to it.
    */
   _loadData: function () {
-    var data = get(this, 'data');
+    var modelName = get(this, 'modelName');
     var currentPageNumber = get(this, 'currentPageNumber');
     var pageSize = get(this, 'pageSize');
     var columns = get(this, 'processedColumns');
 
     var sortProperties = get(this, 'sortProperties');
     var filterString = get(this, 'filterString');
+    var likeFilter = get(this, 'likeFilter');
 
-    if (!get(data, 'query')) {
-      Ember.Logger.warn('You must use http://emberjs.com/api/data/classes/DS.Store.html#method_query for loading data');
-      return;
-    }
-    var query = Ember.$.extend({}, get(data, 'query'));
-    var store = get(data, 'store');
-    var modelName = get(data, 'type.modelName');
+    var query = Ember.$.extend({}, get(this, 'filter'));
+    var store = get(this, 'store');
 
     // Add pagination information
-    query[get(this, 'filterQueryParameters.page')] = currentPageNumber;
+    // Note: customised for the Loopback pagination
+    query[get(this, 'filterQueryParameters.page')] = (currentPageNumber - 1) * pageSize;
     query[get(this, 'filterQueryParameters.pageSize')] = pageSize;
 
     // Add sorting information
@@ -163,10 +168,15 @@ export default ModelsTable.extend({
     // Add per-column filter
     columns.forEach((column) => {
       var filter = get(column, 'filterString');
+      const filterOperand = get(column, 'filterOperand');
+      const caseSensitive = get(column, 'caseSensitive');
       let filterTitle = this.getCustomFilterTitle(column);
 
       if (filter) {
-        query[filterTitle] = filter;
+        if (filterOperand === 'regexp' && !caseSensitive) filter = '/' + filter + '/i'
+        query[filterTitle] = {};
+        if (filterOperand) query[filterTitle][filterOperand] = filter;
+        else query[filterTitle] = filter;
       } else {
         delete query[filterTitle];
       }
@@ -249,6 +259,10 @@ export default ModelsTable.extend({
 
   didReceiveAttrs() {
     set(this, 'filteredContent', get(this, 'data'));
+    if (!get(this, 'didInitLoad')) {
+      set(this, 'didInitLoad', true);
+      this._loadData();
+    }
   },
 
   _addPropertyObserver() {
